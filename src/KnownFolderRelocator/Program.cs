@@ -18,11 +18,15 @@ if (!File.Exists(configPath))
 
 try
 {
-    var command = CliParser.Parse(args);
-    if (command.ShowHelp)
+    CliCommand? command = null;
+    if (args.Length > 0)
     {
-        Console.WriteLine(CliParser.HelpText);
-        return 0;
+        command = CliParser.Parse(args);
+        if (command.ShowHelp)
+        {
+            Console.WriteLine(CliParser.HelpText);
+            return 0;
+        }
     }
 
     var configStore = new KnownFolderConfigStore();
@@ -33,7 +37,12 @@ try
     var migrationService = new MigrationService(knownFolderService, copyService, stateStore);
     var cleanupService = new CleanupService(knownFolderService, stateStore);
 
-    return command.Name switch
+    if (args.Length == 0)
+    {
+        return RunInteractive(folders, knownFolderService, migrationService, cleanupService);
+    }
+
+    return command!.Name switch
     {
         CommandName.Verify => Verify(folders, knownFolderService),
         CommandName.Migrate => RunMigration(command, folders, migrationService, MigrationMode.Migrate),
@@ -67,6 +76,237 @@ static int Verify(IReadOnlyList<KnownFolderConfig> folders, KnownFolderService s
     }
 
     return 0;
+}
+
+static int RunInteractive(
+    IReadOnlyList<KnownFolderConfig> folders,
+    KnownFolderService knownFolderService,
+    MigrationService migrationService,
+    CleanupService cleanupService)
+{
+    while (true)
+    {
+        Console.Clear();
+        Console.WriteLine("Known Folder Relocator");
+        Console.WriteLine();
+        Console.WriteLine("1. Verify current known folder paths");
+        Console.WriteLine("2. Preview migration to a target drive/root");
+        Console.WriteLine("3. Run migration to a target drive/root");
+        Console.WriteLine("4. Preview re-attach to existing target data");
+        Console.WriteLine("5. Run re-attach to existing target data");
+        Console.WriteLine("6. Restore from latest or specified state file");
+        Console.WriteLine("7. Preview cleanup of duplicate old C: files");
+        Console.WriteLine("8. Run cleanup of duplicate old C: files");
+        Console.WriteLine("9. Show command-line help");
+        Console.WriteLine("0. Exit");
+        Console.WriteLine();
+        Console.Write("Select an option: ");
+
+        var choice = (Console.ReadLine() ?? string.Empty).Trim();
+        Console.WriteLine();
+
+        try
+        {
+            switch (choice)
+            {
+                case "1":
+                    Verify(folders, knownFolderService);
+                    Pause();
+                    break;
+                case "2":
+                    RunInteractiveMigration(folders, migrationService, MigrationMode.Migrate, dryRun: true);
+                    Pause();
+                    break;
+                case "3":
+                    RunInteractiveMigration(folders, migrationService, MigrationMode.Migrate, dryRun: false);
+                    Pause();
+                    break;
+                case "4":
+                    RunInteractiveMigration(folders, migrationService, MigrationMode.Attach, dryRun: true);
+                    Pause();
+                    break;
+                case "5":
+                    RunInteractiveMigration(folders, migrationService, MigrationMode.Attach, dryRun: false);
+                    Pause();
+                    break;
+                case "6":
+                    RunInteractiveRestore(migrationService);
+                    Pause();
+                    break;
+                case "7":
+                    RunInteractiveCleanup(cleanupService, force: false);
+                    Pause();
+                    break;
+                case "8":
+                    RunInteractiveCleanup(cleanupService, force: true);
+                    Pause();
+                    break;
+                case "9":
+                    Console.WriteLine(CliParser.HelpText);
+                    Pause();
+                    break;
+                case "0":
+                case "q":
+                case "Q":
+                    return 0;
+                default:
+                    Console.WriteLine("Unknown option.");
+                    Pause();
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            Pause();
+        }
+    }
+}
+
+static void RunInteractiveMigration(
+    IReadOnlyList<KnownFolderConfig> folders,
+    MigrationService migrationService,
+    MigrationMode mode,
+    bool dryRun)
+{
+    EnsureWindows();
+    var targetRoot = ReadTargetRoot();
+    var copyStrategy = ReadCopyStrategy(mode);
+
+    if (!dryRun && !ConfirmDestructive("This will update Windows known folder paths. Continue?"))
+    {
+        Console.WriteLine("Canceled.");
+        return;
+    }
+
+    var result = migrationService.SetKnownFolders(new MigrationRequest(
+        mode,
+        folders,
+        targetRoot,
+        copyStrategy,
+        dryRun));
+
+    Console.WriteLine($"{mode} {(dryRun ? "preview" : "completed")}. Target root: {result.TargetRoot}");
+    PrintFolderResults(result.Folders, dryRun);
+    if (!string.IsNullOrWhiteSpace(result.StateFile))
+    {
+        Console.WriteLine($"State file: {result.StateFile}");
+    }
+    if (dryRun)
+    {
+        Console.WriteLine("Dry run only. No files or Shell paths were changed.");
+    }
+}
+
+static void RunInteractiveRestore(MigrationService migrationService)
+{
+    EnsureWindows();
+    Console.Write("State file path, or blank for latest: ");
+    var stateFile = (Console.ReadLine() ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(stateFile))
+    {
+        stateFile = migrationService.StateStore.GetLatestStateFile();
+    }
+
+    var dryRun = ReadYesNo("Preview only? [Y/n]: ", defaultValue: true);
+    if (!dryRun && !ConfirmDestructive("This will restore known folder paths from the selected state file. Continue?"))
+    {
+        Console.WriteLine("Canceled.");
+        return;
+    }
+
+    migrationService.Restore(stateFile, dryRun);
+    Console.WriteLine($"Restore {(dryRun ? "preview" : "completed")} from {stateFile}");
+    if (dryRun)
+    {
+        Console.WriteLine("Dry run only. No Shell paths were changed.");
+    }
+}
+
+static void RunInteractiveCleanup(CleanupService cleanupService, bool force)
+{
+    EnsureWindows();
+    Console.Write("State file path, or blank for latest: ");
+    var stateFile = (Console.ReadLine() ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(stateFile))
+    {
+        stateFile = null;
+    }
+
+    var removeEmptyDirs = ReadYesNo("Remove empty old directories too? [y/N]: ", defaultValue: false);
+    if (force && !ConfirmDestructive("This will delete duplicate old C: files whose target counterpart has the same SHA-256 hash. Continue?"))
+    {
+        Console.WriteLine("Canceled.");
+        return;
+    }
+
+    var result = cleanupService.Cleanup(stateFile, dryRun: !force, removeEmptyDirs);
+    Console.WriteLine(result.ToJson());
+}
+
+static string ReadTargetRoot()
+{
+    Console.Write("Target drive, for example E: (leave blank to enter full target root): ");
+    var targetDrive = (Console.ReadLine() ?? string.Empty).Trim();
+    if (!string.IsNullOrWhiteSpace(targetDrive))
+    {
+        return TargetRootResolver.Resolve(targetDrive, null);
+    }
+
+    Console.Write("Target root, for example E:\\Users\\pyo1024: ");
+    var targetRoot = (Console.ReadLine() ?? string.Empty).Trim();
+    return TargetRootResolver.Resolve(null, targetRoot);
+}
+
+static CopyStrategy ReadCopyStrategy(MigrationMode mode)
+{
+    Console.WriteLine();
+    Console.WriteLine("Copy strategy:");
+    Console.WriteLine("1. CopyMissing (default, do not overwrite target files)");
+    Console.WriteLine("2. NoCopy (only update known folder paths)");
+    Console.WriteLine("3. BackupConflicts (backup target conflicts, then copy source files)");
+    Console.Write(mode == MigrationMode.Attach ? "Select copy strategy [2]: " : "Select copy strategy [1]: ");
+
+    var input = (Console.ReadLine() ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(input))
+    {
+        return mode == MigrationMode.Attach ? CopyStrategy.NoCopy : CopyStrategy.CopyMissing;
+    }
+
+    return input switch
+    {
+        "1" => CopyStrategy.CopyMissing,
+        "2" => CopyStrategy.NoCopy,
+        "3" => CopyStrategy.BackupConflicts,
+        _ => throw new ArgumentException("Invalid copy strategy.")
+    };
+}
+
+static bool ReadYesNo(string prompt, bool defaultValue)
+{
+    Console.Write(prompt);
+    var input = (Console.ReadLine() ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(input))
+    {
+        return defaultValue;
+    }
+
+    return input.Equals("y", StringComparison.OrdinalIgnoreCase) ||
+        input.Equals("yes", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool ConfirmDestructive(string message)
+{
+    Console.WriteLine(message);
+    Console.Write("Type YES to continue: ");
+    return string.Equals(Console.ReadLine(), "YES", StringComparison.Ordinal);
+}
+
+static void Pause()
+{
+    Console.WriteLine();
+    Console.Write("Press Enter to continue...");
+    Console.ReadLine();
 }
 
 static int RunMigration(

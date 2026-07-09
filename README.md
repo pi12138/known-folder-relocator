@@ -39,6 +39,24 @@ artifacts\publish\win-x64\
 
 ## Commands
 
+If you open `known-folder-relocator.exe` without command-line arguments, it
+starts an interactive console menu:
+
+```text
+1. Verify current known folder paths
+2. Preview migration to a target drive/root
+3. Run migration to a target drive/root
+4. Preview re-attach to existing target data
+5. Run re-attach to existing target data
+6. Restore from latest or specified state file
+7. Preview cleanup of duplicate old C: files
+8. Run cleanup of duplicate old C: files
+9. Show command-line help
+0. Exit
+```
+
+The command-line interface remains available for scripted use.
+
 Verify current Shell API paths:
 
 ```powershell
