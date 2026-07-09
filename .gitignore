@@ -1,4 +1,7 @@
 .logs/
 .state/
+artifacts/
+bin/
+obj/
 *.tmp
 *.bak

@@ -1,58 +1,60 @@
 # Known Folder Relocator
 
-PowerShell tool for moving or re-attaching Windows user known folders to a data drive, so Desktop, Documents, Downloads, Pictures, Music, Videos, and similar folders can survive a Windows reinstall.
+Windows-only C#/.NET CLI for moving or re-attaching user known folders to a data
+drive. It uses the Windows Shell known folder APIs for Desktop, Documents,
+Downloads, Pictures, Music, Videos, and Favorites.
 
-The recommended script is `Set-KnownFoldersWithShellApi.ps1`. It uses the Windows Shell `SHSetKnownFolderPath` API instead of only writing registry values, so it more closely matches Windows' built-in folder Location workflow.
+The tool is intentionally conservative:
 
-The script is intentionally conservative:
-
-- It only changes an allowlist in `known-folders.json`.
-- It does not migrate `AppData`, temp folders, cache folders, or the user profile root.
-- It does not delete data from `C:`.
+- It only changes the allowlist in `known-folders.json`.
+- It uses known folder GUIDs instead of English folder names.
+- It does not migrate `AppData`, temp folders, cache folders, or the profile root.
+- It does not delete old `C:` data during migration or restore.
 - It does not overwrite existing files by default.
-- It writes JSON state backups under `.state/`.
+- It writes JSON state files under `.state/`.
 
-## Folders
+## Build
 
-Default allowlist:
-
-- Desktop
-- Documents
-- Downloads
-- Pictures
-- Music
-- Videos
-- Favorites
-
-Edit `known-folders.json` if you want to include more known folders.
-
-## First-time migration
-
-If PowerShell blocks the script with an execution policy error, run it with a
-process-local bypass:
+Requires the .NET 8 SDK on Windows.
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode Migrate -TargetDrive D: -WhatIf
+dotnet build .\KnownFolderRelocator.sln
+dotnet publish .\src\KnownFolderRelocator\KnownFolderRelocator.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
 
-Or start the current PowerShell session with:
+The project is configured for a single-file `win-x64` executable.
+
+For the normal release flow, use the publish script:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\publish.ps1
 ```
 
-This only changes the policy for the current PowerShell process.
+It builds, runs tests, publishes a self-contained single-file executable, and
+copies `known-folders.json` into:
 
-Preview the operation:
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode Migrate -TargetDrive D: -WhatIf
+```text
+artifacts\publish\win-x64\
 ```
 
-Run it:
+## Commands
+
+Verify current Shell API paths:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode Migrate -TargetDrive D: -RestartExplorer
+.\known-folder-relocator.exe verify
+```
+
+Preview a first-time migration:
+
+```powershell
+.\known-folder-relocator.exe migrate --target-drive D: --dry-run
+```
+
+Run a first-time migration:
+
+```powershell
+.\known-folder-relocator.exe migrate --target-drive D:
 ```
 
 The default target layout is:
@@ -63,99 +65,109 @@ D:\Users\<YourUserName>\Documents
 D:\Users\<YourUserName>\Downloads
 ```
 
-Existing files from the current profile are copied only when the target file does not already exist.
-
-## Re-attach after reinstalling Windows
-
-After reinstalling Windows, install or copy this repository again, then run:
+Re-attach after reinstalling Windows:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode AttachExisting -TargetDrive D: -RestartExplorer
+.\known-folder-relocator.exe attach --target-drive D:
 ```
 
-If `D:\Users\<YourUserName>\Documents` and other folders already exist, Windows will be pointed back to those folders. Any new files created in the fresh `C:\Users\<YourUserName>` folders are copied only when missing from the data drive.
-
-If the new Windows username is different from the old one, pass the exact existing root:
+If the new Windows username is different from the old one, pass the existing
+root:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode AttachExisting -TargetRoot D:\Users\OldUserName -RestartExplorer
+.\known-folder-relocator.exe attach --target-root D:\Users\OldUserName
 ```
 
-## Copy strategies
+Restore from a state file:
 
 ```powershell
-# Default: copy only files missing on the target, do not overwrite conflicts.
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode Migrate -TargetDrive D: -CopyStrategy CopyMissing
-
-# Only update known folder paths. Do not copy files.
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode AttachExisting -TargetDrive D: -CopyStrategy NoCopy
-
-# If a target file already exists, rename it to *.bak, then copy the source file.
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode Migrate -TargetDrive D: -CopyStrategy BackupConflicts
+.\known-folder-relocator.exe restore --state .\.state\shell-known-folder-20260709-120000.json
 ```
 
-## Verify and restore
-
-Verify current Shell API paths:
+Cleanup duplicate old files:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode Verify
+.\known-folder-relocator.exe cleanup --dry-run
+.\known-folder-relocator.exe cleanup --force
 ```
 
-Restore from the latest state file:
+Cleanup only deletes old files when the target counterpart exists and has the
+same SHA-256 hash.
+
+To also remove old directories that become empty after duplicate files are
+removed:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode Restore -RestartExplorer
+.\known-folder-relocator.exe cleanup --dry-run --remove-empty-dirs
+.\known-folder-relocator.exe cleanup --force --remove-empty-dirs
 ```
 
-Restore from a specific state file:
+Non-empty directories are skipped.
+
+## Copy Strategies
+
+Default behavior copies missing files only and records conflicts:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Set-KnownFoldersWithShellApi.ps1 -Mode Restore -StatePath .\.state\shell-known-folder-20260709-120000.json -RestartExplorer
+.\known-folder-relocator.exe migrate --target-drive D: --copy-strategy CopyMissing
 ```
 
-Restore only changes known folder paths back. It does not delete data on the target drive.
-
-## Clean up old C: files
-
-After you verify the known folders work from the data drive, you can remove
-duplicate files left in the old `C:\Users\<YourUserName>` known folder
-locations.
-
-Preview first:
+Only update known folder paths:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode CleanupOld -WhatIf
+.\known-folder-relocator.exe attach --target-drive D: --no-copy
 ```
 
-Delete matching duplicates:
+Back up target conflicts before copying source files:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode CleanupOld -ForceCleanup
+.\known-folder-relocator.exe migrate --target-drive D: --copy-strategy BackupConflicts
 ```
 
-`CleanupOld` uses the latest `.state\known-folder-relocator-*.json` file by
-default when one exists. If no state file exists, it infers old paths from
-`C:\Users\<YourUserName>` and current known folder registry values.
+## Tests
 
-To use a specific state file:
+The tests are a dependency-free console project:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode CleanupOld -RestoreState .\.state\known-folder-relocator-20260709-120000.json -WhatIf
+dotnet run --project .\tests\KnownFolderRelocator.Tests\KnownFolderRelocator.Tests.csproj
 ```
 
-Cleanup rules:
+## Manual Validation
 
-- Only files from previous C: known folder paths are considered.
-- A file is deleted only when the matching target file exists and has the same SHA-256 hash.
-- Different, missing, or uncertain files are skipped.
-- Folder directories are not deleted.
-- Real deletion requires `-ForceCleanup`.
+```powershell
+.\known-folder-relocator.exe verify
+.\known-folder-relocator.exe migrate --target-drive D: --dry-run
+.\known-folder-relocator.exe migrate --target-drive D:
+.\known-folder-relocator.exe verify
+```
 
-## Notes
+Explorer checks:
 
-- Run from a normal user PowerShell session. Administrator is usually not required because the script writes to `HKCU`.
-- Use `-WhatIf` before the first real run.
-- Close applications that actively use Desktop, Documents, Downloads, Pictures, Music, or Videos before running.
-- If Quick Access still contains old pinned folders, unpin those entries and pin the new Shell folders again.
-- `Move-KnownFolders.ps1` is retained as the legacy registry-based script. New usage should prefer `Set-KnownFoldersWithShellApi.ps1`.
+```powershell
+explorer.exe shell:Desktop
+explorer.exe shell:Personal
+explorer.exe shell:Downloads
+explorer.exe shell:My Pictures
+explorer.exe shell:My Music
+explorer.exe shell:My Video
+```
+
+Acceptance checks:
+
+- `verify` shows migrated folders on the target drive.
+- Folder Properties > Location shows the target drive.
+- New files created through Explorer land on the target drive.
+- Restore returns folders to their previous paths.
+- Cleanup never deletes files whose target counterpart is missing or differs by
+  hash.
+- Empty old directories are removed only when `--remove-empty-dirs` is specified.
+
+## Legacy PowerShell
+
+The original PowerShell implementation is retained under `legacy/`:
+
+- `legacy/Set-KnownFoldersWithShellApi.ps1`
+- `legacy/Move-KnownFolders.ps1`
+
+Use the .NET CLI for new migrations. The legacy scripts are kept for audit,
+fallback, and behavioral comparison.
