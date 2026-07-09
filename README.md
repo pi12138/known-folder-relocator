@@ -26,6 +26,21 @@ Edit `known-folders.json` if you want to include more known folders.
 
 ## First-time migration
 
+If PowerShell blocks the script with an execution policy error, run it with a
+process-local bypass:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode Migrate -TargetDrive D: -WhatIf
+```
+
+Or start the current PowerShell session with:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+This only changes the policy for the current PowerShell process.
+
 Preview the operation:
 
 ```powershell

@@ -10,7 +10,7 @@ param(
     [ValidateSet('CopyMissing', 'NoCopy', 'BackupConflicts')]
     [string]$CopyStrategy = 'CopyMissing',
 
-    [string]$ConfigPath = (Join-Path $PSScriptRoot 'known-folders.json'),
+    [string]$ConfigPath,
 
     [string]$RestoreState,
 
@@ -19,6 +19,14 @@ param(
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
+
+$ScriptRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($ScriptRoot)) {
+    $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
+    $ConfigPath = Join-Path $ScriptRoot 'known-folders.json'
+}
 
 $UserShellFoldersKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders'
 $ShellFoldersKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
@@ -127,7 +135,7 @@ function Resolve-TargetRoot {
 }
 
 function New-StateDirectory {
-    $stateDir = Join-Path $PSScriptRoot '.state'
+    $stateDir = Join-Path $ScriptRoot '.state'
     if ($PSCmdlet.ShouldProcess($stateDir, 'create state directory')) {
         New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
     }
@@ -260,7 +268,7 @@ function Write-StateFile {
 }
 
 function Get-LatestStateFile {
-    $stateDir = Join-Path $PSScriptRoot '.state'
+    $stateDir = Join-Path $ScriptRoot '.state'
     if (-not (Test-Path -LiteralPath $stateDir)) {
         throw "State directory was not found: $stateDir"
     }
