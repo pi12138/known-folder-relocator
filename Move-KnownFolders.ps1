@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
-    [ValidateSet('Migrate', 'AttachExisting', 'Restore')]
+    [ValidateSet('Migrate', 'AttachExisting', 'Restore', 'CleanupOld')]
     [string]$Mode = 'Migrate',
 
     [string]$TargetDrive,
@@ -13,6 +13,8 @@ param(
     [string]$ConfigPath,
 
     [string]$RestoreState,
+
+    [switch]$ForceCleanup,
 
     [switch]$RestartExplorer
 )
@@ -320,10 +322,140 @@ function Invoke-Restore {
     Write-Host "Restore completed from $path"
 }
 
+function Test-SameFileContent {
+    param(
+        [string]$LeftPath,
+        [string]$RightPath
+    )
+
+    $left = Get-Item -LiteralPath $LeftPath
+    $right = Get-Item -LiteralPath $RightPath
+    if ($left.Length -ne $right.Length) {
+        return $false
+    }
+
+    $leftHash = Get-FileHash -LiteralPath $LeftPath -Algorithm SHA256
+    $rightHash = Get-FileHash -LiteralPath $RightPath -Algorithm SHA256
+    return $leftHash.Hash -eq $rightHash.Hash
+}
+
+function Test-SamePath {
+    param(
+        [AllowNull()][string]$LeftPath,
+        [AllowNull()][string]$RightPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LeftPath) -or [string]::IsNullOrWhiteSpace($RightPath)) {
+        return $false
+    }
+
+    $leftFullPath = [System.IO.Path]::GetFullPath((Expand-KnownPath $LeftPath)).TrimEnd('\')
+    $rightFullPath = [System.IO.Path]::GetFullPath((Expand-KnownPath $RightPath)).TrimEnd('\')
+    return [string]::Equals($leftFullPath, $rightFullPath, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Invoke-CleanupOld {
+    param(
+        [AllowNull()][string]$StatePath
+    )
+
+    if (-not $WhatIfPreference -and -not $ForceCleanup) {
+        throw 'CleanupOld deletes files. Run with -WhatIf first, then rerun with -ForceCleanup to delete matching duplicate files.'
+    }
+
+    $path = $StatePath
+    if ([string]::IsNullOrWhiteSpace($path)) {
+        $path = Get-LatestStateFile
+    }
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "Cleanup state file was not found: $path"
+    }
+
+    $state = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    $summary = [ordered]@{
+        StateFile = $path
+        MatchedDuplicateFiles = 0
+        DeletedFiles = 0
+        SkippedMissingTarget = 0
+        SkippedDifferentContent = 0
+        SkippedInvalidFolder = 0
+        Errors = @()
+    }
+
+    foreach ($entry in $state.Folders) {
+        $oldPath = Expand-KnownPath $entry.ExpandedOldPath
+        if ([string]::IsNullOrWhiteSpace($oldPath)) {
+            $oldPath = Expand-KnownPath $entry.OldUserShellPath
+        }
+        $newPath = Expand-KnownPath $entry.NewPath
+
+        if ([string]::IsNullOrWhiteSpace($oldPath) -or
+            [string]::IsNullOrWhiteSpace($newPath) -or
+            -not (Test-Path -LiteralPath $oldPath) -or
+            -not (Test-Path -LiteralPath $newPath)) {
+            Write-Warning "Skipping $($entry.Name): old or new folder does not exist."
+            $summary.SkippedInvalidFolder++
+            continue
+        }
+
+        $oldRoot = [System.IO.Path]::GetPathRoot($oldPath)
+        if ($oldRoot.TrimEnd('\') -ine 'C:') {
+            Write-Warning "Skipping $($entry.Name): old folder is not on C drive: $oldPath"
+            $summary.SkippedInvalidFolder++
+            continue
+        }
+
+        $currentPath = Get-RegistryValue -Key $UserShellFoldersKey -Name $entry.RegistryName
+        if (-not (Test-SamePath -LeftPath $currentPath -RightPath $newPath)) {
+            Write-Warning "Skipping $($entry.Name): current known folder is not pointing to $newPath."
+            $summary.SkippedInvalidFolder++
+            continue
+        }
+
+        $oldRootPath = (Get-Item -LiteralPath $oldPath).FullName.TrimEnd('\')
+        $oldFiles = Get-ChildItem -LiteralPath $oldRootPath -Force -Recurse -File
+        foreach ($oldFile in $oldFiles) {
+            $relativePath = $oldFile.FullName.Substring($oldRootPath.Length).TrimStart('\')
+            $newFilePath = Join-Path $newPath $relativePath
+
+            if (-not (Test-Path -LiteralPath $newFilePath -PathType Leaf)) {
+                $summary.SkippedMissingTarget++
+                continue
+            }
+
+            try {
+                if (-not (Test-SameFileContent -LeftPath $oldFile.FullName -RightPath $newFilePath)) {
+                    $summary.SkippedDifferentContent++
+                    continue
+                }
+
+                $summary.MatchedDuplicateFiles++
+                if ($PSCmdlet.ShouldProcess($oldFile.FullName, "delete duplicate already present at $newFilePath")) {
+                    Remove-Item -LiteralPath $oldFile.FullName -Force
+                    $summary.DeletedFiles++
+                }
+            }
+            catch {
+                $summary.Errors += [ordered]@{
+                    Path = $oldFile.FullName
+                    Error = $_.Exception.Message
+                }
+            }
+        }
+    }
+
+    $summary | ConvertTo-Json -Depth 6
+}
+
 Assert-Windows
 
 if ($Mode -eq 'Restore') {
     Invoke-Restore -StatePath $RestoreState
+    return
+}
+
+if ($Mode -eq 'CleanupOld') {
+    Invoke-CleanupOld -StatePath $RestoreState
     return
 }
 

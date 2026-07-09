@@ -108,6 +108,39 @@ Restore from a specific state file:
 
 Restore only changes registry paths back. It does not delete data on the target drive.
 
+## Clean up old C: files
+
+After you verify the known folders work from the data drive, you can remove
+duplicate files left in the old `C:\Users\<YourUserName>` known folder
+locations.
+
+Preview first:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode CleanupOld -WhatIf
+```
+
+Delete matching duplicates:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode CleanupOld -ForceCleanup
+```
+
+`CleanupOld` uses the latest `.state\known-folder-relocator-*.json` file by
+default. To use a specific state file:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode CleanupOld -RestoreState .\.state\known-folder-relocator-20260709-120000.json -WhatIf
+```
+
+Cleanup rules:
+
+- Only files from the previous C: known folder paths recorded in the state file are considered.
+- A file is deleted only when the matching target file exists and has the same SHA-256 hash.
+- Different, missing, or uncertain files are skipped.
+- Folder directories are not deleted.
+- Real deletion requires `-ForceCleanup`.
+
 ## Notes
 
 - Run from a normal user PowerShell session. Administrator is usually not required because the script writes to `HKCU`.
