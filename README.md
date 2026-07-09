@@ -57,6 +57,16 @@ starts an interactive console menu:
 
 The command-line interface remains available for scripted use.
 
+## Language
+
+The tool automatically uses Chinese when the Windows UI culture is Chinese;
+otherwise it uses English. You can override the language with `--lang`:
+
+```powershell
+.\known-folder-relocator.exe --lang zh verify
+.\known-folder-relocator.exe --lang en verify
+```
+
 Verify current Shell API paths:
 
 ```powershell

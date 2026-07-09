@@ -11,6 +11,7 @@ var tests = new (string Name, Action Test)[]
     ("copy missing does not overwrite conflicts", CopyMissingDoesNotOverwriteConflicts),
     ("backup conflicts preserves target", BackupConflictsPreservesTarget),
     ("cleanup parses remove empty dirs", CleanupParsesRemoveEmptyDirs),
+    ("cli parses language option", CliParsesLanguageOption),
     ("state serialization round trips", StateSerializationRoundTrips)
 };
 
@@ -97,6 +98,13 @@ static void CleanupParsesRemoveEmptyDirs()
     Assert(command.Name == CommandName.Cleanup, "cleanup command");
     Assert(command.DryRun, "dry run");
     Assert(command.RemoveEmptyDirs, "remove empty dirs");
+}
+
+static void CliParsesLanguageOption()
+{
+    var command = CliParser.Parse(["--lang", "zh", "verify"]);
+    Assert(command.Name == CommandName.Verify, "verify command");
+    Assert(command.LanguageCode == "zh", "language code");
 }
 
 static void StateSerializationRoundTrips()

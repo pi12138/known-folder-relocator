@@ -14,6 +14,7 @@ public enum CommandName
 
 public sealed record CliCommand(
     CommandName Name,
+    string? LanguageCode = null,
     string? TargetDrive = null,
     string? TargetRoot = null,
     string? StatePath = null,
@@ -26,22 +27,12 @@ public sealed record CliCommand(
 
 public static class CliParser
 {
-    public const string HelpText = """
-    Usage:
-      known-folder-relocator verify
-      known-folder-relocator migrate --target-drive E [--copy-strategy CopyMissing|NoCopy|BackupConflicts] [--dry-run]
-      known-folder-relocator migrate --target-root E:\Users\pyo1024 [--dry-run]
-      known-folder-relocator attach --target-drive E [--no-copy] [--dry-run]
-      known-folder-relocator restore --state .state\shell-known-folder-xxx.json [--dry-run]
-      known-folder-relocator cleanup --dry-run [--remove-empty-dirs] [--state .state\shell-known-folder-xxx.json]
-      known-folder-relocator cleanup --force [--remove-empty-dirs] [--state .state\shell-known-folder-xxx.json]
-    """;
-
     public static CliCommand Parse(string[] args)
     {
+        var languageCode = ExtractLanguage(args, out args);
         if (args.Length == 0 || IsHelp(args[0]))
         {
-            return new CliCommand(CommandName.Help, ShowHelp: true);
+            return new CliCommand(CommandName.Help, LanguageCode: languageCode, ShowHelp: true);
         }
 
         var name = args[0].ToLowerInvariant() switch
@@ -93,7 +84,7 @@ public static class CliParser
                     break;
                 case "-h":
                 case "--help":
-                    return new CliCommand(CommandName.Help, ShowHelp: true);
+                    return new CliCommand(CommandName.Help, LanguageCode: languageCode, ShowHelp: true);
                 default:
                     throw new ArgumentException($"Unknown option: {arg}");
             }
@@ -106,7 +97,32 @@ public static class CliParser
             throw new ArgumentException("Specify --target-drive or --target-root.");
         }
 
-        return new CliCommand(name, targetDrive, targetRoot, statePath, strategy, strategy == CopyStrategy.NoCopy, dryRun, force, removeEmptyDirs);
+        return new CliCommand(name, languageCode, targetDrive, targetRoot, statePath, strategy, strategy == CopyStrategy.NoCopy, dryRun, force, removeEmptyDirs);
+    }
+
+    private static string? ExtractLanguage(string[] args, out string[] remainingArgs)
+    {
+        string? languageCode = null;
+        var remaining = new List<string>();
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--lang")
+            {
+                if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                {
+                    throw new ArgumentException("--lang requires a value.");
+                }
+
+                languageCode = args[++i];
+                continue;
+            }
+
+            remaining.Add(args[i]);
+        }
+
+        remainingArgs = remaining.ToArray();
+        return languageCode;
     }
 
     private static string ReadValue(string[] args, ref int index, string option)

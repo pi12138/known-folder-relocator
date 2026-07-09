@@ -1,6 +1,7 @@
 using KnownFolderRelocator;
 using KnownFolderRelocator.Commands;
 using KnownFolderRelocator.FileOperations;
+using KnownFolderRelocator.Localization;
 using KnownFolderRelocator.Shell;
 using KnownFolderRelocator.State;
 
@@ -19,12 +20,14 @@ if (!File.Exists(configPath))
 try
 {
     CliCommand? command = null;
+    var localizer = Localizer.Create();
     if (args.Length > 0)
     {
         command = CliParser.Parse(args);
+        localizer = Localizer.Create(command.LanguageCode);
         if (command.ShowHelp)
         {
-            Console.WriteLine(CliParser.HelpText);
+            Console.WriteLine(localizer.HelpText);
             return 0;
         }
     }
@@ -39,17 +42,17 @@ try
 
     if (args.Length == 0)
     {
-        return RunInteractive(folders, knownFolderService, migrationService, cleanupService);
+        return RunInteractive(folders, knownFolderService, migrationService, cleanupService, localizer);
     }
 
     return command!.Name switch
     {
-        CommandName.Verify => Verify(folders, knownFolderService),
-        CommandName.Migrate => RunMigration(command, folders, migrationService, MigrationMode.Migrate),
-        CommandName.Attach => RunMigration(command, folders, migrationService, MigrationMode.Attach),
-        CommandName.Restore => RunRestore(command, migrationService),
-        CommandName.Cleanup => RunCleanup(command, cleanupService),
-        _ => Fail("Unknown command.")
+        CommandName.Verify => Verify(folders, knownFolderService, localizer),
+        CommandName.Migrate => RunMigration(command, folders, migrationService, MigrationMode.Migrate, localizer),
+        CommandName.Attach => RunMigration(command, folders, migrationService, MigrationMode.Attach, localizer),
+        CommandName.Restore => RunRestore(command, migrationService, localizer),
+        CommandName.Cleanup => RunCleanup(command, cleanupService, localizer),
+        _ => Fail(localizer.T("UnknownCommand"), localizer)
     };
 }
 catch (Exception ex)
@@ -58,10 +61,10 @@ catch (Exception ex)
     return 1;
 }
 
-static int Verify(IReadOnlyList<KnownFolderConfig> folders, KnownFolderService service)
+static int Verify(IReadOnlyList<KnownFolderConfig> folders, KnownFolderService service, Localizer localizer)
 {
-    EnsureWindows();
-    Console.WriteLine($"{"Name",-12} {"Exists",-7} Path");
+    EnsureWindows(localizer);
+    Console.WriteLine($"{localizer.T("Name"),-12} {localizer.T("Exists"),-7} {localizer.T("Path")}");
     foreach (var folder in folders)
     {
         try
@@ -71,7 +74,7 @@ static int Verify(IReadOnlyList<KnownFolderConfig> folders, KnownFolderService s
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"{folder.Name,-12} {"ERROR",-7} {ex.Message}");
+            Console.WriteLine($"{folder.Name,-12} {localizer.T("Error"),-7} {ex.Message}");
         }
     }
 
@@ -82,25 +85,26 @@ static int RunInteractive(
     IReadOnlyList<KnownFolderConfig> folders,
     KnownFolderService knownFolderService,
     MigrationService migrationService,
-    CleanupService cleanupService)
+    CleanupService cleanupService,
+    Localizer localizer)
 {
     while (true)
     {
         Console.Clear();
-        Console.WriteLine("Known Folder Relocator");
+        Console.WriteLine(localizer.T("AppTitle"));
         Console.WriteLine();
-        Console.WriteLine("1. Verify current known folder paths");
-        Console.WriteLine("2. Preview migration to a target drive/root");
-        Console.WriteLine("3. Run migration to a target drive/root");
-        Console.WriteLine("4. Preview re-attach to existing target data");
-        Console.WriteLine("5. Run re-attach to existing target data");
-        Console.WriteLine("6. Restore from latest or specified state file");
-        Console.WriteLine("7. Preview cleanup of duplicate old C: files");
-        Console.WriteLine("8. Run cleanup of duplicate old C: files");
-        Console.WriteLine("9. Show command-line help");
-        Console.WriteLine("0. Exit");
+        Console.WriteLine($"1. {localizer.T("MenuVerify")}");
+        Console.WriteLine($"2. {localizer.T("MenuPreviewMigrate")}");
+        Console.WriteLine($"3. {localizer.T("MenuRunMigrate")}");
+        Console.WriteLine($"4. {localizer.T("MenuPreviewAttach")}");
+        Console.WriteLine($"5. {localizer.T("MenuRunAttach")}");
+        Console.WriteLine($"6. {localizer.T("MenuRestore")}");
+        Console.WriteLine($"7. {localizer.T("MenuPreviewCleanup")}");
+        Console.WriteLine($"8. {localizer.T("MenuRunCleanup")}");
+        Console.WriteLine($"9. {localizer.T("MenuHelp")}");
+        Console.WriteLine($"0. {localizer.T("MenuExit")}");
         Console.WriteLine();
-        Console.Write("Select an option: ");
+        Console.Write(localizer.T("SelectOption"));
 
         var choice = (Console.ReadLine() ?? string.Empty).Trim();
         Console.WriteLine();
@@ -110,55 +114,55 @@ static int RunInteractive(
             switch (choice)
             {
                 case "1":
-                    Verify(folders, knownFolderService);
-                    Pause();
+                    Verify(folders, knownFolderService, localizer);
+                    Pause(localizer);
                     break;
                 case "2":
-                    RunInteractiveMigration(folders, migrationService, MigrationMode.Migrate, dryRun: true);
-                    Pause();
+                    RunInteractiveMigration(folders, migrationService, MigrationMode.Migrate, dryRun: true, localizer);
+                    Pause(localizer);
                     break;
                 case "3":
-                    RunInteractiveMigration(folders, migrationService, MigrationMode.Migrate, dryRun: false);
-                    Pause();
+                    RunInteractiveMigration(folders, migrationService, MigrationMode.Migrate, dryRun: false, localizer);
+                    Pause(localizer);
                     break;
                 case "4":
-                    RunInteractiveMigration(folders, migrationService, MigrationMode.Attach, dryRun: true);
-                    Pause();
+                    RunInteractiveMigration(folders, migrationService, MigrationMode.Attach, dryRun: true, localizer);
+                    Pause(localizer);
                     break;
                 case "5":
-                    RunInteractiveMigration(folders, migrationService, MigrationMode.Attach, dryRun: false);
-                    Pause();
+                    RunInteractiveMigration(folders, migrationService, MigrationMode.Attach, dryRun: false, localizer);
+                    Pause(localizer);
                     break;
                 case "6":
-                    RunInteractiveRestore(migrationService);
-                    Pause();
+                    RunInteractiveRestore(migrationService, localizer);
+                    Pause(localizer);
                     break;
                 case "7":
-                    RunInteractiveCleanup(cleanupService, force: false);
-                    Pause();
+                    RunInteractiveCleanup(cleanupService, force: false, localizer);
+                    Pause(localizer);
                     break;
                 case "8":
-                    RunInteractiveCleanup(cleanupService, force: true);
-                    Pause();
+                    RunInteractiveCleanup(cleanupService, force: true, localizer);
+                    Pause(localizer);
                     break;
                 case "9":
-                    Console.WriteLine(CliParser.HelpText);
-                    Pause();
+                    Console.WriteLine(localizer.HelpText);
+                    Pause(localizer);
                     break;
                 case "0":
                 case "q":
                 case "Q":
                     return 0;
                 default:
-                    Console.WriteLine("Unknown option.");
-                    Pause();
+                    Console.WriteLine(localizer.T("UnknownOption"));
+                    Pause(localizer);
                     break;
             }
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine(ex.Message);
-            Pause();
+            Pause(localizer);
         }
     }
 }
@@ -167,15 +171,16 @@ static void RunInteractiveMigration(
     IReadOnlyList<KnownFolderConfig> folders,
     MigrationService migrationService,
     MigrationMode mode,
-    bool dryRun)
+    bool dryRun,
+    Localizer localizer)
 {
-    EnsureWindows();
-    var targetRoot = ReadTargetRoot();
-    var copyStrategy = ReadCopyStrategy(mode);
+    EnsureWindows(localizer);
+    var targetRoot = ReadTargetRoot(localizer);
+    var copyStrategy = ReadCopyStrategy(mode, localizer);
 
-    if (!dryRun && !ConfirmDestructive("This will update Windows known folder paths. Continue?"))
+    if (!dryRun && !ConfirmDestructive(localizer.T("MigrationConfirm"), localizer))
     {
-        Console.WriteLine("Canceled.");
+        Console.WriteLine(localizer.T("Canceled"));
         return;
     }
 
@@ -186,57 +191,57 @@ static void RunInteractiveMigration(
         copyStrategy,
         dryRun));
 
-    Console.WriteLine($"{mode} {(dryRun ? "preview" : "completed")}. Target root: {result.TargetRoot}");
-    PrintFolderResults(result.Folders, dryRun);
+    Console.WriteLine($"{mode} {(dryRun ? "preview" : "completed")}. {localizer.T("TargetRoot")}: {result.TargetRoot}");
+    PrintFolderResults(result.Folders, dryRun, localizer);
     if (!string.IsNullOrWhiteSpace(result.StateFile))
     {
-        Console.WriteLine($"State file: {result.StateFile}");
+        Console.WriteLine($"{localizer.T("StateFile")}: {result.StateFile}");
     }
     if (dryRun)
     {
-        Console.WriteLine("Dry run only. No files or Shell paths were changed.");
+        Console.WriteLine(localizer.T("DryRunOnly"));
     }
 }
 
-static void RunInteractiveRestore(MigrationService migrationService)
+static void RunInteractiveRestore(MigrationService migrationService, Localizer localizer)
 {
-    EnsureWindows();
-    Console.Write("State file path, or blank for latest: ");
+    EnsureWindows(localizer);
+    Console.Write(localizer.T("StateFilePrompt"));
     var stateFile = (Console.ReadLine() ?? string.Empty).Trim();
     if (string.IsNullOrWhiteSpace(stateFile))
     {
         stateFile = migrationService.StateStore.GetLatestStateFile();
     }
 
-    var dryRun = ReadYesNo("Preview only? [Y/n]: ", defaultValue: true);
-    if (!dryRun && !ConfirmDestructive("This will restore known folder paths from the selected state file. Continue?"))
+    var dryRun = ReadYesNo(localizer.T("PreviewOnlyPrompt"), defaultValue: true);
+    if (!dryRun && !ConfirmDestructive(localizer.T("RestoreConfirm"), localizer))
     {
-        Console.WriteLine("Canceled.");
+        Console.WriteLine(localizer.T("Canceled"));
         return;
     }
 
     migrationService.Restore(stateFile, dryRun);
-    Console.WriteLine($"Restore {(dryRun ? "preview" : "completed")} from {stateFile}");
+    Console.WriteLine(string.Format(dryRun ? localizer.T("RestorePreview") : localizer.T("RestoreCompleted"), stateFile));
     if (dryRun)
     {
-        Console.WriteLine("Dry run only. No Shell paths were changed.");
+        Console.WriteLine(localizer.T("DryRunOnly"));
     }
 }
 
-static void RunInteractiveCleanup(CleanupService cleanupService, bool force)
+static void RunInteractiveCleanup(CleanupService cleanupService, bool force, Localizer localizer)
 {
-    EnsureWindows();
-    Console.Write("State file path, or blank for latest: ");
+    EnsureWindows(localizer);
+    Console.Write(localizer.T("StateFilePrompt"));
     var stateFile = (Console.ReadLine() ?? string.Empty).Trim();
     if (string.IsNullOrWhiteSpace(stateFile))
     {
         stateFile = null;
     }
 
-    var removeEmptyDirs = ReadYesNo("Remove empty old directories too? [y/N]: ", defaultValue: false);
-    if (force && !ConfirmDestructive("This will delete duplicate old C: files whose target counterpart has the same SHA-256 hash. Continue?"))
+    var removeEmptyDirs = ReadYesNo(localizer.T("RemoveEmptyDirsPrompt"), defaultValue: false);
+    if (force && !ConfirmDestructive(localizer.T("CleanupConfirm"), localizer))
     {
-        Console.WriteLine("Canceled.");
+        Console.WriteLine(localizer.T("Canceled"));
         return;
     }
 
@@ -244,28 +249,28 @@ static void RunInteractiveCleanup(CleanupService cleanupService, bool force)
     Console.WriteLine(result.ToJson());
 }
 
-static string ReadTargetRoot()
+static string ReadTargetRoot(Localizer localizer)
 {
-    Console.Write("Target drive, for example E: (leave blank to enter full target root): ");
+    Console.Write(localizer.T("TargetDrivePrompt"));
     var targetDrive = (Console.ReadLine() ?? string.Empty).Trim();
     if (!string.IsNullOrWhiteSpace(targetDrive))
     {
         return TargetRootResolver.Resolve(targetDrive, null);
     }
 
-    Console.Write("Target root, for example E:\\Users\\pyo1024: ");
+    Console.Write(localizer.T("TargetRootPrompt"));
     var targetRoot = (Console.ReadLine() ?? string.Empty).Trim();
     return TargetRootResolver.Resolve(null, targetRoot);
 }
 
-static CopyStrategy ReadCopyStrategy(MigrationMode mode)
+static CopyStrategy ReadCopyStrategy(MigrationMode mode, Localizer localizer)
 {
     Console.WriteLine();
-    Console.WriteLine("Copy strategy:");
-    Console.WriteLine("1. CopyMissing (default, do not overwrite target files)");
-    Console.WriteLine("2. NoCopy (only update known folder paths)");
-    Console.WriteLine("3. BackupConflicts (backup target conflicts, then copy source files)");
-    Console.Write(mode == MigrationMode.Attach ? "Select copy strategy [2]: " : "Select copy strategy [1]: ");
+    Console.WriteLine(localizer.T("CopyStrategy"));
+    Console.WriteLine(localizer.T("CopyStrategy1"));
+    Console.WriteLine(localizer.T("CopyStrategy2"));
+    Console.WriteLine(localizer.T("CopyStrategy3"));
+    Console.Write(mode == MigrationMode.Attach ? localizer.T("SelectCopyStrategyAttach") : localizer.T("SelectCopyStrategyMigrate"));
 
     var input = (Console.ReadLine() ?? string.Empty).Trim();
     if (string.IsNullOrWhiteSpace(input))
@@ -278,7 +283,7 @@ static CopyStrategy ReadCopyStrategy(MigrationMode mode)
         "1" => CopyStrategy.CopyMissing,
         "2" => CopyStrategy.NoCopy,
         "3" => CopyStrategy.BackupConflicts,
-        _ => throw new ArgumentException("Invalid copy strategy.")
+        _ => throw new ArgumentException(localizer.T("InvalidCopyStrategy"))
     };
 }
 
@@ -295,17 +300,17 @@ static bool ReadYesNo(string prompt, bool defaultValue)
         input.Equals("yes", StringComparison.OrdinalIgnoreCase);
 }
 
-static bool ConfirmDestructive(string message)
+static bool ConfirmDestructive(string message, Localizer localizer)
 {
     Console.WriteLine(message);
-    Console.Write("Type YES to continue: ");
+    Console.Write(localizer.T("TypeYes"));
     return string.Equals(Console.ReadLine(), "YES", StringComparison.Ordinal);
 }
 
-static void Pause()
+static void Pause(Localizer localizer)
 {
     Console.WriteLine();
-    Console.Write("Press Enter to continue...");
+    Console.Write(localizer.T("PressEnter"));
     Console.ReadLine();
 }
 
@@ -313,9 +318,10 @@ static int RunMigration(
     CliCommand command,
     IReadOnlyList<KnownFolderConfig> folders,
     MigrationService migrationService,
-    MigrationMode mode)
+    MigrationMode mode,
+    Localizer localizer)
 {
-    EnsureWindows();
+    EnsureWindows(localizer);
     var targetRoot = TargetRootResolver.Resolve(command.TargetDrive, command.TargetRoot);
     var result = migrationService.SetKnownFolders(new MigrationRequest(
         mode,
@@ -324,50 +330,50 @@ static int RunMigration(
         command.CopyStrategy,
         command.DryRun));
 
-    Console.WriteLine($"{mode} completed. Target root: {result.TargetRoot}");
-    PrintFolderResults(result.Folders, command.DryRun);
+    Console.WriteLine($"{mode} completed. {localizer.T("TargetRoot")}: {result.TargetRoot}");
+    PrintFolderResults(result.Folders, command.DryRun, localizer);
     if (!string.IsNullOrWhiteSpace(result.StateFile))
     {
-        Console.WriteLine($"State file: {result.StateFile}");
+        Console.WriteLine($"{localizer.T("StateFile")}: {result.StateFile}");
     }
     if (command.DryRun)
     {
-        Console.WriteLine("Dry run only. No files or Shell paths were changed.");
+        Console.WriteLine(localizer.T("DryRunOnly"));
     }
 
     return 0;
 }
 
-static void PrintFolderResults(IReadOnlyList<FolderState> folders, bool dryRun)
+static void PrintFolderResults(IReadOnlyList<FolderState> folders, bool dryRun, Localizer localizer)
 {
-    Console.WriteLine($"{"Name",-12} {"Action",-10} Current path -> Target path");
+    Console.WriteLine($"{localizer.T("Name"),-12} {localizer.T("Action"),-10} {localizer.T("CurrentToTarget")}");
     foreach (var folder in folders)
     {
-        var action = PathHelpers.SamePath(folder.OldPath, folder.NewPath) ? "Unchanged" : dryRun ? "WouldSet" : "Set";
+        var action = PathHelpers.SamePath(folder.OldPath, folder.NewPath) ? localizer.T("Unchanged") : dryRun ? localizer.T("WouldSet") : localizer.T("Set");
         Console.WriteLine($"{folder.Name,-12} {action,-10} {folder.OldPath ?? "(unknown)"} -> {folder.NewPath}");
 
         if (folder.Copy is not null)
         {
             if (folder.Copy.Skipped)
             {
-                Console.WriteLine($"{"",-12} {"Copy",-10} skipped");
+                Console.WriteLine($"{"",-12} {localizer.T("Copy"),-10} {localizer.T("Skipped")}");
             }
             else
             {
-                Console.WriteLine($"{"",-12} {"Copy",-10} files={folder.Copy.CopiedFiles}, dirs={folder.Copy.CreatedDirectories}, conflicts={folder.Copy.Conflicts.Count}, backups={folder.Copy.BackedUpConflicts.Count}");
+                Console.WriteLine($"{"",-12} {localizer.T("Copy"),-10} files={folder.Copy.CopiedFiles}, dirs={folder.Copy.CreatedDirectories}, conflicts={folder.Copy.Conflicts.Count}, backups={folder.Copy.BackedUpConflicts.Count}");
             }
         }
 
         foreach (var error in folder.Errors)
         {
-            Console.WriteLine($"{"",-12} {"Error",-10} {error}");
+            Console.WriteLine($"{"",-12} {localizer.T("Error"),-10} {error}");
         }
     }
 }
 
-static int RunRestore(CliCommand command, MigrationService migrationService)
+static int RunRestore(CliCommand command, MigrationService migrationService, Localizer localizer)
 {
-    EnsureWindows();
+    EnsureWindows(localizer);
     var stateFile = command.StatePath;
     if (string.IsNullOrWhiteSpace(stateFile))
     {
@@ -375,21 +381,21 @@ static int RunRestore(CliCommand command, MigrationService migrationService)
     }
 
     migrationService.Restore(stateFile, command.DryRun);
-    Console.WriteLine($"Restore completed from {stateFile}");
+    Console.WriteLine(string.Format(command.DryRun ? localizer.T("RestorePreview") : localizer.T("RestoreCompleted"), stateFile));
     if (command.DryRun)
     {
-        Console.WriteLine("Dry run only. No Shell paths were changed.");
+        Console.WriteLine(localizer.T("DryRunOnly"));
     }
 
     return 0;
 }
 
-static int RunCleanup(CliCommand command, CleanupService cleanupService)
+static int RunCleanup(CliCommand command, CleanupService cleanupService, Localizer localizer)
 {
-    EnsureWindows();
+    EnsureWindows(localizer);
     if (!command.DryRun && !command.Force)
     {
-        throw new InvalidOperationException("cleanup requires --dry-run or --force.");
+        throw new InvalidOperationException(localizer.T("CleanupRequiresForce"));
     }
 
     var result = cleanupService.Cleanup(command.StatePath, command.DryRun, command.RemoveEmptyDirs);
@@ -397,17 +403,17 @@ static int RunCleanup(CliCommand command, CleanupService cleanupService)
     return 0;
 }
 
-static void EnsureWindows()
+static void EnsureWindows(Localizer localizer)
 {
     if (!OperatingSystem.IsWindows())
     {
-        throw new PlatformNotSupportedException("known-folder-relocator must run on Windows.");
+        throw new PlatformNotSupportedException(localizer.T("NotWindows"));
     }
 }
 
-static int Fail(string message)
+static int Fail(string message, Localizer localizer)
 {
     Console.Error.WriteLine(message);
-    Console.Error.WriteLine(CliParser.HelpText);
+    Console.Error.WriteLine(localizer.HelpText);
     return 1;
 }
