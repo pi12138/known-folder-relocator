@@ -33,31 +33,5 @@
     "Name": "Favorites",
     "RegistryName": "Favorites",
     "DirectoryName": "Favorites"
-  },
-  {
-    "Name": "Contacts",
-    "RegistryName": "{56784854-C6CB-462B-8169-88E350ACB882}",
-    "DirectoryName": "Contacts"
-  },
-  {
-    "Name": "Links",
-    "RegistryName": "{BFB9D5E0-C6A9-404C-B2B2-AE6DB6AF4968}",
-    "DirectoryName": "Links"
-  },
-  {
-    "Name": "Saved Games",
-    "RegistryName": "{4C5C32FF-BB9D-43B0-B5B4-2D72E54EAAA4}",
-    "DirectoryName": "Saved Games"
-  },
-  {
-    "Name": "Searches",
-    "RegistryName": "{7D1D3A04-DEBB-4115-95CF-2F29DA2920DA}",
-    "DirectoryName": "Searches"
-  },
-  {
-    "Name": "3D Objects",
-    "RegistryName": "{31C0DD25-9439-4F12-BF41-7FF4EDA38722}",
-    "DirectoryName": "3D Objects",
-    "Optional": true
   }
 ]

@@ -21,11 +21,8 @@ Default allowlist:
 - Music
 - Videos
 - Favorites
-- Contacts
-- Links
-- Saved Games
-- Searches
-- 3D Objects, when present
+
+Edit `known-folders.json` if you want to include more known folders.
 
 ## First-time migration
 
