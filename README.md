@@ -127,7 +127,10 @@ powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode Clean
 ```
 
 `CleanupOld` uses the latest `.state\known-folder-relocator-*.json` file by
-default. To use a specific state file:
+default when one exists. If no state file exists, it infers old paths from
+`C:\Users\<YourUserName>` and current known folder registry values.
+
+To use a specific state file:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode CleanupOld -RestoreState .\.state\known-folder-relocator-20260709-120000.json -WhatIf
@@ -135,7 +138,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\Move-KnownFolders.ps1 -Mode Clean
 
 Cleanup rules:
 
-- Only files from the previous C: known folder paths recorded in the state file are considered.
+- Only files from previous C: known folder paths are considered.
 - A file is deleted only when the matching target file exists and has the same SHA-256 hash.
 - Different, missing, or uncertain files are skipped.
 - Folder directories are not deleted.

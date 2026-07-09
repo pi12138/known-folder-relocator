@@ -364,16 +364,41 @@ function Invoke-CleanupOld {
     }
 
     $path = $StatePath
+    $cleanupEntries = @()
     if ([string]::IsNullOrWhiteSpace($path)) {
-        $path = Get-LatestStateFile
+        try {
+            $path = Get-LatestStateFile
+        }
+        catch {
+            $path = $null
+        }
     }
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "Cleanup state file was not found: $path"
+    if (-not [string]::IsNullOrWhiteSpace($path)) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            throw "Cleanup state file was not found: $path"
+        }
+
+        $state = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        $cleanupEntries = $state.Folders
+    }
+    else {
+        Write-Warning 'No state file was found. CleanupOld will infer old C: paths from known-folders.json and current registry values.'
+        $profileRoot = Join-Path 'C:\Users' $env:USERNAME
+        foreach ($folder in (Get-Config -Path $ConfigPath)) {
+            $currentPath = Get-RegistryValue -Key $UserShellFoldersKey -Name $folder.RegistryName
+            $cleanupEntries += [ordered]@{
+                Name = $folder.Name
+                RegistryName = $folder.RegistryName
+                ExpandedOldPath = Join-Path $profileRoot $folder.DirectoryName
+                OldUserShellPath = $null
+                NewPath = $currentPath
+            }
+        }
     }
 
-    $state = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     $summary = [ordered]@{
         StateFile = $path
+        InferredWithoutState = [string]::IsNullOrWhiteSpace($path)
         MatchedDuplicateFiles = 0
         DeletedFiles = 0
         SkippedMissingTarget = 0
@@ -382,7 +407,7 @@ function Invoke-CleanupOld {
         Errors = @()
     }
 
-    foreach ($entry in $state.Folders) {
+    foreach ($entry in $cleanupEntries) {
         $oldPath = Expand-KnownPath $entry.ExpandedOldPath
         if ([string]::IsNullOrWhiteSpace($oldPath)) {
             $oldPath = Expand-KnownPath $entry.OldUserShellPath
@@ -401,6 +426,18 @@ function Invoke-CleanupOld {
         $oldRoot = [System.IO.Path]::GetPathRoot($oldPath)
         if ($oldRoot.TrimEnd('\') -ine 'C:') {
             Write-Warning "Skipping $($entry.Name): old folder is not on C drive: $oldPath"
+            $summary.SkippedInvalidFolder++
+            continue
+        }
+
+        $newRoot = [System.IO.Path]::GetPathRoot($newPath)
+        if ($newRoot.TrimEnd('\') -ieq 'C:') {
+            Write-Warning "Skipping $($entry.Name): current target folder is still on C drive: $newPath"
+            $summary.SkippedInvalidFolder++
+            continue
+        }
+        if (Test-SamePath -LeftPath $oldPath -RightPath $newPath) {
+            Write-Warning "Skipping $($entry.Name): old and new folders resolve to the same path: $oldPath"
             $summary.SkippedInvalidFolder++
             continue
         }
